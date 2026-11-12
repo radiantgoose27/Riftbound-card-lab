@@ -4,6 +4,7 @@ import { getMeta } from './data.ts'
 import { esc, fmtDate, num } from './format.ts'
 import type { Meta } from './types.ts'
 import { href, parseRoute, type Route } from './route.ts'
+import { getLevel, LEVELS, levelLabel, setLevel, type Level } from './stats.ts'
 import { renderAbout } from './views/about.ts'
 import { renderCards } from './views/cards.ts'
 import { renderLegends } from './views/legends.ts'
@@ -33,10 +34,18 @@ function shell(meta: Meta, route: Route): string {
         <h1><a href="${href({ period: route.period })}">Riftbound Card Lab</a></h1>
         <p class="tagline">Which cards actually win games for each legend</p>
       </div>
-      <label class="period-picker">
-        <span>Meta period</span>
-        <select id="period-select" ${route.view === 'about' ? 'disabled' : ''}>${periodOptions}</select>
-      </label>
+      <div class="pickers">
+        <label class="period-picker">
+          <span>Meta period</span>
+          <select id="period-select" ${route.view === 'about' ? 'disabled' : ''}>${periodOptions}</select>
+        </label>
+        <label class="period-picker">
+          <span>Confidence</span>
+          <select id="level-select">${LEVELS.map(
+            (l) => `<option value="${l}" ${l === getLevel() ? 'selected' : ''}>${levelLabel(l)}</option>`,
+          ).join('')}</select>
+        </label>
+      </div>
     </header>
     <nav class="tabs" aria-label="Views">
       ${tab('legends', 'Legends')}
@@ -65,6 +74,10 @@ async function render() {
   document.getElementById('period-select')?.addEventListener('change', (e) => {
     const period = (e.target as HTMLSelectElement).value
     location.hash = href({ ...route, period })
+  })
+  document.getElementById('level-select')?.addEventListener('change', (e) => {
+    setLevel(Number((e.target as HTMLSelectElement).value) as Level)
+    void render()
   })
   const view = document.getElementById('view')!
   view.innerHTML = '<p class="loading">Loading…</p>'

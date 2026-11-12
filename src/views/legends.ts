@@ -2,6 +2,7 @@ import { axisCaption, shareBar, whiskerCell } from '../charts.ts'
 import { getLegends } from '../data.ts'
 import { esc, num, pct } from '../format.ts'
 import { href, type Route } from '../route.ts'
+import { levelLabel, toneOf, wilson } from '../stats.ts'
 import type { LegendRow } from '../types.ts'
 
 type SortKey = 'win_rate' | 'matches' | 'deck_share' | 'legend'
@@ -30,7 +31,7 @@ export async function renderLegends(view: HTMLElement, route: Route) {
     view.innerHTML = `
       <section class="intro">
         <h2>Legend overview</h2>
-        <p>Match win rate for each legend, mirror matches excluded. Bars show a 95% confidence
+        <p>Match win rate for each legend, mirror matches excluded. Bars show a ${levelLabel()} confidence
         interval. Pick a legend to see which cards help or hurt it.</p>
       </section>
       <div class="controls">
@@ -66,14 +67,15 @@ export async function renderLegends(view: HTMLElement, route: Route) {
 }
 
 function row(r: LegendRow, domain: [number, number], maxShare: number, route: Route): string {
-  const tone = r.ci[0] > 0.5 ? 'pos' : r.ci[1] < 0.5 ? 'neg' : 'neutral'
+  const ci = wilson(r.win_rate, r.matches)!
+  const tone = toneOf(ci, 0.5)
   const tip = `<strong>${esc(r.legend)}</strong><br>Win rate ${pct(r.win_rate)}
-    (95% CI ${pct(r.ci[0])}–${pct(r.ci[1])})<br>${num(r.matches)} matches · ${num(r.decklists)} decklists`
+    (${levelLabel()} CI ${pct(ci[0])}–${pct(ci[1])})<br>${num(r.matches)} matches · ${num(r.decklists)} decklists`
   const link = href({ period: route.period, view: 'cards', legend: r.slug })
   return `<tr>
     <th scope="row">${r.card_analysis ? `<a href="${link}">${esc(r.legend)}</a>` : esc(r.legend)}</th>
     <td class="num">${pct(r.win_rate)}</td>
-    <td class="col-chart">${whiskerCell({ value: r.win_rate, lo: r.ci[0], hi: r.ci[1], tone, tip }, domain, 0.5)}</td>
+    <td class="col-chart">${whiskerCell({ value: r.win_rate, lo: ci[0], hi: ci[1], tone, tip }, domain, 0.5)}</td>
     <td class="num">${num(r.matches)}</td>
     <td>${shareBar(r.deck_share / maxShare, `${pct(r.deck_share)} <span class="muted">(${num(r.decklists)})</span>`)}</td>
     <td class="action">${

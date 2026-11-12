@@ -241,11 +241,13 @@ def fit_card(X: pd.DataFrame, y: np.ndarray, has: np.ndarray, groups: np.ndarray
     X1, X0 = Xc.copy(), Xc.copy()
     X1["has_card"], X0["has_card"] = 1.0, 0.0
     ame = float(np.mean(res.predict(X1) - res.predict(X0)))
-    # Delta-method-free CI: scale the log-odds CI by the same marginal factor.
+    # Put the log-odds standard error on the win-rate scale using the same
+    # marginal factor as the point estimate. The web app builds intervals at
+    # the viewer's chosen confidence level as adj_delta ± z * adj_se.
     scale = ame / beta if abs(beta) > 1e-9 else float(np.mean(res.predict(Xc) * (1 - res.predict(Xc))))
     return {
         "adj_delta": ame,
-        "adj_ci": [(beta - 1.96 * se) * scale, (beta + 1.96 * se) * scale],
+        "adj_se": abs(se * scale),
         "log_odds": beta,
         "p": float(res.pvalues["has_card"]),
     }
@@ -299,12 +301,10 @@ def card_table(pm_leg: pd.DataFrame, cards_leg: pd.DataFrame, n_decks: int) -> l
             "matches_without": m_without,
             "wr_with": r4(wr_with),
             "wr_without": r4(wr_without),
-            "ci_with": list(wilson(y[has].sum(), m_with)),
-            "ci_without": list(wilson(y[~has].sum(), m_without)),
             "raw_delta": r4(wr_with - wr_without) if wr_with is not None and wr_without is not None else None,
             "by_copies": by_copies,
             "adj_delta": None,
-            "adj_ci": None,
+            "adj_se": None,
             "p": None,
             "q": None,
             "fit": False,
@@ -319,7 +319,7 @@ def card_table(pm_leg: pd.DataFrame, cards_leg: pd.DataFrame, n_decks: int) -> l
             if fit:
                 row.update(
                     adj_delta=r4(fit["adj_delta"]),
-                    adj_ci=[r4(fit["adj_ci"][0]), r4(fit["adj_ci"][1])],
+                    adj_se=r4(fit["adj_se"]),
                     p=fit["p"],
                     fit=True,
                 )

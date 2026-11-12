@@ -68,4 +68,4 @@ def test_fit_card_recovers_positive_effect():
     fit = fit_card(X, y, has, groups)
     assert fit is not None
     assert 0.05 < fit["adj_delta"] < 0.25
-    assert fit["adj_ci"][0] < fit["adj_delta"] < fit["adj_ci"][1]
+    assert 0.01 < fit["adj_se"] < 0.08

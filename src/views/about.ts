@@ -35,6 +35,12 @@ export function renderAbout(view: HTMLElement, meta: Meta) {
         with and without it. Cards seen in fewer than ${t.min_card_decks} decks are not listed.</li>
       </ul>
 
+      <h3>Confidence level</h3>
+      <p>The <strong>Confidence</strong> menu (default 90%) sets the width of every interval on the site.
+      A card's whisker is colored when its whole interval sits on one side of zero. At 80–90% expect some
+      false alarms. The colored cards are a shortlist of what to test, not a verdict. Switch to 95% for a
+      stricter filter.</p>
+
       <h3>Evidence labels</h3>
       <p>With hundreds of cards tested, some will look strong by luck. Each legend's p-values are corrected
       with the Benjamini–Hochberg procedure, giving a q value:</p>

@@ -673,3 +673,14 @@ table.matrix {
 table.cards tbody th {
   min-width: 170px;
 }
+
+.pickers {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+@media (min-width: 721px) {
+  table.cards tbody th {
+    white-space: nowrap;
+  }
+}

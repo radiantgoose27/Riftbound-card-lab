@@ -2,7 +2,13 @@ import { axisCaption, shareBar, whiskerCell } from '../charts.ts'
 import { getCards, getLegends } from '../data.ts'
 import { esc, EVIDENCE_LABEL, evidence, num, pct, pts } from '../format.ts'
 import { href, type Route } from '../route.ts'
+import { getLevel, levelLabel, normalInterval, toneOf, wilson } from '../stats.ts'
 import type { CardRow, Meta } from '../types.ts'
+
+/** Adjusted-effect interval at the viewer's confidence level. */
+const ciOf = (c: CardRow): [number, number] | null =>
+  c.fit && c.adj_delta != null && c.adj_se != null ? normalInterval(c.adj_delta, c.adj_se) : null
+const flagged = (c: CardRow) => toneOf(ciOf(c), 0) !== 'neutral'
 
 type SortKey = 'adj_delta' | 'raw_delta' | 'play_rate' | 'card'
 const state = {
@@ -10,6 +16,7 @@ const state = {
   query: '',
   section: 'all',
   showLowSample: false,
+  onlyFlagged: false,
   expanded: new Set<string>(),
 }
 
@@ -37,6 +44,7 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
     const q = state.query.trim().toLowerCase()
     const rows = file.cards
       .filter((c) => state.showLowSample || c.fit)
+      .filter((c) => !state.onlyFlagged || flagged(c))
       .filter((c) => state.section === 'all' || c.section === state.section)
       .filter((c) => !q || c.card.toLowerCase().includes(q))
       .sort(compare)
@@ -47,7 +55,10 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
     // capped so one huge interval doesn't flatten everything else.
     const extent = Math.max(
       0.1,
-      ...fitted.map((c) => Math.max(Math.abs(c.adj_ci![0]), Math.abs(c.adj_ci![1]))),
+      ...fitted.map((c) => {
+        const ci = ciOf(c)!
+        return Math.max(Math.abs(ci[0]), Math.abs(ci[1]))
+      }),
     )
     const d = Math.min(0.3, Math.ceil(extent * 20) / 20)
     const domain: [number, number] = [-d, d]
@@ -63,7 +74,8 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
         <p>${num(file.decklists)} decklists · win rate ${pct(legend.win_rate)} over ${num(legend.matches)} matches.
         <strong>Effect</strong> is the change in match win rate when a deck includes the card, after
         adjusting for opponent legend, player skill and top-cut rounds. Blue means the card is linked to
-        winning more, red to winning less, and gray means the 95% interval includes zero.</p>
+        winning more, red to winning less, and gray means the ${levelLabel()} interval includes zero.
+        Colored cards are the ones worth a closer look or more testing.</p>
       </section>
       ${highlights(fitted)}
       <div class="controls">
@@ -75,6 +87,8 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
               .map((s) => `<option value="${s}" ${state.section === s ? 'selected' : ''}>${s === 'all' ? 'All sections' : s}</option>`)
               .join('')}
           </select></label>
+        <label class="check"><input type="checkbox" id="only-flagged" ${state.onlyFlagged ? 'checked' : ''}>
+          Only cards whose ${levelLabel()} interval excludes zero</label>
         <label class="check"><input type="checkbox" id="low-sample" ${state.showLowSample ? 'checked' : ''}>
           Include ${lowSample} cards with too few games to estimate</label>
       </div>
@@ -114,6 +128,10 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
     })
     view.querySelector<HTMLSelectElement>('#section-filter')!.addEventListener('change', (e) => {
       state.section = (e.target as HTMLSelectElement).value
+      draw()
+    })
+    view.querySelector<HTMLInputElement>('#only-flagged')!.addEventListener('change', (e) => {
+      state.onlyFlagged = (e.target as HTMLInputElement).checked
       draw()
     })
     view.querySelector<HTMLInputElement>('#low-sample')!.addEventListener('change', (e) => {
@@ -158,23 +176,24 @@ function wirePicker(view: HTMLElement, route: Route) {
 }
 
 function highlights(fitted: CardRow[]): string {
-  const credible = fitted.filter((c) => c.q != null && c.q < 0.2)
+  const credible = fitted.filter(flagged)
   const best = credible.filter((c) => c.adj_delta! > 0).sort((a, b) => b.adj_delta! - a.adj_delta!)[0]
   const worst = credible.filter((c) => c.adj_delta! < 0).sort((a, b) => a.adj_delta! - b.adj_delta!)[0]
   const tile = (label: string, c: CardRow | undefined) =>
     c
       ? `<div class="tile"><span class="tile-label">${label}</span>
           <span class="tile-value">${esc(c.card)}</span>
-          <span class="tile-delta">${pts(c.adj_delta)} · ${EVIDENCE_LABEL[evidence(c.q, c.fit)].toLowerCase()}</span></div>`
+          <span class="tile-delta">${pts(c.adj_delta)} · ${levelLabel()} interval ${pts(ciOf(c)![0])} to ${pts(ciOf(c)![1])}</span></div>`
       : `<div class="tile"><span class="tile-label">${label}</span>
           <span class="tile-value muted">None stands out</span>
-          <span class="tile-delta">no card clears the evidence bar</span></div>`
+          <span class="tile-delta">no ${levelLabel()} interval clears zero</span></div>`
   return `<div class="tiles">
     ${tile('Biggest boost', best)}
     ${tile('Biggest drag', worst)}
     <div class="tile"><span class="tile-label">Cards with enough games</span>
       <span class="tile-value">${fitted.length}</span>
-      <span class="tile-delta">${credible.length} with suggestive or strong evidence</span></div>
+      <span class="tile-delta">${credible.length} flagged at ${levelLabel()} · about
+        ${Math.round(fitted.length * (1 - getLevel()))} would be flagged by chance alone</span></div>
   </div>`
 }
 
@@ -182,15 +201,13 @@ function cardRow(c: CardRow, domain: [number, number]): string {
   const ev = evidence(c.q, c.fit)
   const k = key(c)
   const open = state.expanded.has(k)
-  const tone =
-    c.adj_ci == null ? 'neutral' : c.adj_ci[0] > 0 ? 'pos' : c.adj_ci[1] < 0 ? 'neg' : 'neutral'
+  const ci = ciOf(c)
+  const tone = toneOf(ci, 0)
   const tip = c.fit
-    ? `<strong>${esc(c.card)}</strong><br>Adjusted effect ${pts(c.adj_delta)}<br>95% CI ${pts(c.adj_ci![0])} to ${pts(
-        c.adj_ci![1],
-      )}<br>q = ${c.q?.toFixed(3)} · ${EVIDENCE_LABEL[ev]}`
+    ? `<strong>${esc(c.card)}</strong><br>Adjusted effect ${pts(c.adj_delta)}<br>${levelLabel()} CI ${pts(ci![0])} to ${pts(ci![1])}<br>q = ${c.q?.toFixed(3)} · ${EVIDENCE_LABEL[ev]}`
     : ''
   const chart = c.fit
-    ? whiskerCell({ value: c.adj_delta!, lo: c.adj_ci![0], hi: c.adj_ci![1], tone, tip }, domain, 0)
+    ? whiskerCell({ value: c.adj_delta!, lo: ci![0], hi: ci![1], tone, tip }, domain, 0)
     : `<span class="muted small">Not estimated</span>`
 
   const main = `<tr class="${open ? 'open' : ''}">
@@ -216,14 +233,17 @@ function cardRow(c: CardRow, domain: [number, number]): string {
          <td class="num">${num(s.matches)}</td><td class="num">${pct(s.wr)}</td></tr>`,
     )
     .join('')
+  const ciW = wilson(c.wr_with ?? 0, c.matches_with)
+  const ciWo = wilson(c.wr_without ?? 0, c.matches_without)
+  const range = (r: [number, number] | null) => (r ? `${pct(r[0])}–${pct(r[1])}` : '–')
   return `${main}<tr class="detail"><td colspan="8">
     <div class="detail-grid">
       <dl>
         <div><dt>Decks with / without</dt><dd>${num(c.decks_with)} / ${num(c.decks_without)}</dd></div>
         <div><dt>Matches with / without</dt><dd>${num(c.matches_with)} / ${num(c.matches_without)}</dd></div>
-        <div><dt>Win rate with</dt><dd>${pct(c.wr_with)} <span class="muted">(${pct(c.ci_with[0])}–${pct(c.ci_with[1])})</span></dd></div>
-        <div><dt>Win rate without</dt><dd>${pct(c.wr_without)} <span class="muted">(${pct(c.ci_without[0])}–${pct(c.ci_without[1])})</span></dd></div>
-        <div><dt>Adjusted effect</dt><dd>${c.fit ? `${pts(c.adj_delta)} <span class="muted">(${pts(c.adj_ci![0])} to ${pts(c.adj_ci![1])})</span>` : 'Not enough games on both sides'}</dd></div>
+        <div><dt>Win rate with</dt><dd>${pct(c.wr_with)} <span class="muted">(${range(ciW)})</span></dd></div>
+        <div><dt>Win rate without</dt><dd>${pct(c.wr_without)} <span class="muted">(${range(ciWo)})</span></dd></div>
+        <div><dt>Adjusted effect</dt><dd>${c.fit ? `${pts(c.adj_delta)} <span class="muted">(${levelLabel()} CI ${pts(ci![0])} to ${pts(ci![1])})</span>` : 'Not enough games on both sides'}</dd></div>
         <div><dt>p / q value</dt><dd>${c.p != null ? `${c.p.toFixed(3)} / ${c.q!.toFixed(3)}` : '–'}</dd></div>
       </dl>
       <table class="mini">

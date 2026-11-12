@@ -55,12 +55,11 @@ export interface CardRow {
   matches_without: number
   wr_with: number | null
   wr_without: number | null
-  ci_with: [number | null, number | null]
-  ci_without: [number | null, number | null]
   raw_delta: number | null
   by_copies: Record<string, CopiesStat>
   adj_delta: number | null
-  adj_ci: [number, number] | null
+  /** standard error of adj_delta, win-rate scale */
+  adj_se: number | null
   p: number | null
   q: number | null
   fit: boolean
