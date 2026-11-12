@@ -67,7 +67,7 @@ export async function renderLegends(view: HTMLElement, route: Route) {
 }
 
 function row(r: LegendRow, domain: [number, number], maxShare: number, route: Route): string {
-  const ci = wilson(r.win_rate, r.matches)!
+  const ci = wilson(r.win_rate, r.matches) ?? [r.win_rate, r.win_rate]
   const tone = toneOf(ci, 0.5)
   const tip = `<strong>${esc(r.legend)}</strong><br>Win rate ${pct(r.win_rate)}
     (${levelLabel()} CI ${pct(ci[0])}–${pct(ci[1])})<br>${num(r.matches)} matches · ${num(r.decklists)} decklists`

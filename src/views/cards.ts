@@ -9,6 +9,7 @@ import type { CardRow, Meta } from '../types.ts'
 const ciOf = (c: CardRow): [number, number] | null =>
   c.fit && c.adj_delta != null && c.adj_se != null ? normalInterval(c.adj_delta, c.adj_se) : null
 const flagged = (c: CardRow) => toneOf(ciOf(c), 0) !== 'neutral'
+const estimated = (c: CardRow) => ciOf(c) !== null
 
 type SortKey = 'adj_delta' | 'raw_delta' | 'play_rate' | 'card'
 const state = {
@@ -43,12 +44,12 @@ export async function renderCards(view: HTMLElement, meta: Meta, route: Route) {
   const draw = () => {
     const q = state.query.trim().toLowerCase()
     const rows = file.cards
-      .filter((c) => state.showLowSample || c.fit)
+      .filter((c) => state.showLowSample || estimated(c))
       .filter((c) => !state.onlyFlagged || flagged(c))
       .filter((c) => state.section === 'all' || c.section === state.section)
       .filter((c) => !q || c.card.toLowerCase().includes(q))
       .sort(compare)
-    const fitted = file.cards.filter((c) => c.fit)
+    const fitted = file.cards.filter(estimated)
     const lowSample = file.cards.length - fitted.length
 
     // Shared scale for the effect column: wide enough for most intervals,
@@ -203,10 +204,10 @@ function cardRow(c: CardRow, domain: [number, number]): string {
   const open = state.expanded.has(k)
   const ci = ciOf(c)
   const tone = toneOf(ci, 0)
-  const tip = c.fit
+  const tip = ci
     ? `<strong>${esc(c.card)}</strong><br>Adjusted effect ${pts(c.adj_delta)}<br>${levelLabel()} CI ${pts(ci![0])} to ${pts(ci![1])}<br>q = ${c.q?.toFixed(3)} · ${EVIDENCE_LABEL[ev]}`
     : ''
-  const chart = c.fit
+  const chart = ci
     ? whiskerCell({ value: c.adj_delta!, lo: ci![0], hi: ci![1], tone, tip }, domain, 0)
     : `<span class="muted small">Not estimated</span>`
 
@@ -220,7 +221,7 @@ function cardRow(c: CardRow, domain: [number, number]): string {
     <td class="num hide-sm">${pct(c.wr_with)}</td>
     <td class="num hide-sm">${pct(c.wr_without)}</td>
     <td class="num hide-sm">${pts(c.raw_delta)}</td>
-    <td class="num strong">${c.fit ? pts(c.adj_delta) : '–'}</td>
+    <td class="num strong">${ci ? pts(c.adj_delta) : '–'}</td>
     <td class="col-chart">${chart}</td>
     <td class="hide-sm"><span class="evidence ev-${ev}">${EVIDENCE_LABEL[ev]}</span></td>
   </tr>`
@@ -243,7 +244,7 @@ function cardRow(c: CardRow, domain: [number, number]): string {
         <div><dt>Matches with / without</dt><dd>${num(c.matches_with)} / ${num(c.matches_without)}</dd></div>
         <div><dt>Win rate with</dt><dd>${pct(c.wr_with)} <span class="muted">(${range(ciW)})</span></dd></div>
         <div><dt>Win rate without</dt><dd>${pct(c.wr_without)} <span class="muted">(${range(ciWo)})</span></dd></div>
-        <div><dt>Adjusted effect</dt><dd>${c.fit ? `${pts(c.adj_delta)} <span class="muted">(${levelLabel()} CI ${pts(ci![0])} to ${pts(ci![1])})</span>` : 'Not enough games on both sides'}</dd></div>
+        <div><dt>Adjusted effect</dt><dd>${ci ? `${pts(c.adj_delta)} <span class="muted">(${levelLabel()} CI ${pts(ci![0])} to ${pts(ci![1])})</span>` : 'Not enough games on both sides'}</dd></div>
         <div><dt>p / q value</dt><dd>${c.p != null ? `${c.p.toFixed(3)} / ${c.q!.toFixed(3)}` : '–'}</dd></div>
       </dl>
       <table class="mini">
